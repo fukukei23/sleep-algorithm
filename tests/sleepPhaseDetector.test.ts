@@ -129,3 +129,15 @@ describe('RemIntervalRecorder（仕様メモ §2.4 区間記録）', () => {
     expect(r.getIntervals().light).toHaveLength(0);
   });
 });
+
+describe('自己点検で追加した欠落テスト（coverage BrPart削減）', () => {
+  test('LIGHT継続中は区間が延伸する（§2.4）', () => {
+    const r = new RemIntervalRecorder();
+    r.onPhase('DEEP_SLEEP', 0);
+    r.onPhase('LIGHT_SLEEP', 60 * 1000); // 遷移で区間開始
+    r.onPhase('LIGHT_SLEEP', 90 * 1000); // 継続で延伸
+    const { light } = r.getIntervals();
+    expect(light).toHaveLength(1);
+    expect(light[0]).toEqual({ start: 60 * 1000 - 10 * 1000, end: 90 * 1000 });
+  });
+});

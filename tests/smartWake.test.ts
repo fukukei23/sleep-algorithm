@@ -184,3 +184,19 @@ describe('SmartWakeScheduler（仕様メモ §5 smart wake）', () => {
     });
   });
 });
+
+describe('自己点検で追加した欠落テスト（coverage BrPart削減）', () => {
+  test('lastRingingTsが1時間以内なら鳴動扱いで発火しない（alarmAlreadyRinging=false経路）', () => {
+    const s = new SmartWakeScheduler();
+    const r = s.shouldFireSmartWake({
+      nowMs: at(45),
+      alarmMs: at(60),
+      phase: 'LIGHT_SLEEP',
+      sleepLengthMinutes: 500,
+      alarmAlreadyRinging: false,
+      lastRingingTs: at(45) - 10 * MIN, // 10分前に鳴動（1時間以内）
+      trialValid: true,
+    });
+    expect(r.fire).toBe(false);
+  });
+});

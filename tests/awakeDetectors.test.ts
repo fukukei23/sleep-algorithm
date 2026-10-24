@@ -150,3 +150,20 @@ describe('EnsembleAwakeDetector（§3 OR合成）', () => {
     expect(e.isAwake()).toBe(false);
   });
 });
+
+describe('自己点検で追加した欠落テスト（coverage BrPart削減）', () => {
+  test('画面ONが最大継続時間（60分）超で覚醒判定を打ち切る', () => {
+    const d = new PhoneUsageDetector();
+    d.onScreenOn(0);
+    expect(d.isAwake(PhoneUsageDetector.SCREEN_ON_MAX_TIME_MS + 1000)).toBe(false);
+  });
+
+  test('Ensemble.stop()で強制状態が解除されdetector実判定に戻る', () => {
+    const e = new EnsembleAwakeDetector();
+    e.add({ isAwake: () => false });
+    e.forceAwakeNow();
+    expect(e.isAwake()).toBe(true);
+    e.stop();
+    expect(e.isAwake()).toBe(false); // 強制解除→detector実判定（false）
+  });
+});

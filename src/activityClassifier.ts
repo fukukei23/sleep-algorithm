@@ -58,9 +58,6 @@ class RingBuffer {
     return m;
   }
 
-  size(): number {
-    return this.count;
-  }
 }
 
 export class ActivityClassifier {

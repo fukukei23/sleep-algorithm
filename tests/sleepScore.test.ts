@@ -190,3 +190,10 @@ describe('MeasureKey 型の集計対象外確認（コンパイル時担保）',
     expect(all).toHaveLength(9);
   });
 });
+
+describe('自己点検で追加した欠落テスト（coverage BrPart削減）', () => {
+  test('評価0件でのgetScorePercentageは0', () => {
+    const s = new SleepScoreCalculator();
+    expect(s.getScorePercentage()).toBe(0);
+  });
+});
