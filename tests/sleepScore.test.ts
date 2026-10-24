@@ -197,3 +197,12 @@ describe('自己点検で追加した欠落テスト（coverage BrPart削減）'
     expect(s.getScorePercentage()).toBe(0);
   });
 });
+
+describe('MLR r2修正の回帰テスト', () => {
+  test('idealSleepMinutes=0でも特例progressが適用される（!== undefined 判定）', () => {
+    const s = new SleepScoreCalculator({ idealSleepMinutes: 0 });
+    // ideal=0は実用外だが・undefinedとの区別を契約とする（0で割る→Infinity→clamp100）
+    const r = s.updateMeasure('DURATION', 240);
+    expect(r.progress).toBe(100); // Infinity→clamp100
+  });
+});

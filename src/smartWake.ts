@@ -54,10 +54,11 @@ export class SmartWakeScheduler {
     return sleepLengthMinutes >= this.settings.idealSleepMinutes;
   }
 
-  /** スマート期間（§5.1・スヌーズ中でない・窓>0・now+窓 > alarm・目標達成） */
+  /** スマート期間（§5.1・スヌーズ中でない・窓>0・[alarm−窓, alarm) の半開区間・目標達成） */
   isInSmartPeriod(nowMs: number, alarmMs: number, windowMinutes: number, ctx: SmartPeriodContext): boolean {
     if (ctx.snoozing) return false;
     if (windowMinutes <= 0) return false;
+    if (nowMs >= alarmMs) return false; // MLR r2修正: アラーム時刻経過後はsmart期間外（元アラーム経路に任せる）
     if (nowMs + windowMinutes * 60 * 1000 <= alarmMs) return false;
     if (!ctx.targetAchieved) return false;
     return true;

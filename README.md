@@ -54,10 +54,12 @@ const percent = score.getScorePercentage();
 
 ## 入力契約
 
-- `ActivityClassifier.update()`: ベースライン除去済みの振幅（|a - baseline|）
-- `SleepPhaseDetector.update()`: 活動フラグ（1サンプル=1分想定）・null=欠損
-- `computeRegularityIndex()`: 1日ちょうど1440要素の boolean 配列 ×2
+- `ActivityClassifier.update()`: ベースライン除去済みの振幅（|a - baseline|）。**単位はストリーム内で一意であること**（G または milli-G・途中変更は未定義挙動。150超を1回でも観測すると milli-G モードへ恒久的に移行する）
+- `SleepPhaseDetector.update()`: 活動フラグ（1サンプル=1分想定）・null=欠損。**shortWindow のデフォルトは6（スマホ）**・スマートウォッチでは明示的に `shortWindow: 12` を指定すること（§2.3表）
+- `SleepScoreCalculator`: `idealSleepMinutes` は `undefined` との区別で判定（0指定時も特例progressが適用される）
+- `computeRegularityIndex()`: **1日ちょうど1440要素**の boolean 配列 ×2（length≠1440 は throw・「データなし」は全false配列を渡すと -1 を返す）
 - センサー由来の生値（加速度・照度・BLE心拍）は adapter 層で変換してから渡す
+- `SmartWakeScheduler`: アラーム時刻は**端末ローカル時刻**前提（sameHourMinute の時分一致はローカルTZで評価）・smart wake の適用区間は `[alarm−窓, alarm)` の半開区間
 
 ## クリーンルール宣言
 

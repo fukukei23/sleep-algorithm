@@ -235,3 +235,20 @@ describe('MLR r1修正の回帰テスト（個別窓設定が本番経路に効�
     expect(r.fire).toBe(true);
   });
 });
+
+describe('MLR r2修正の回帰テスト', () => {
+  test('アラーム時刻経過後はsmart期間外（半開区間 [alarm-窓, alarm)）', () => {
+    const s = new SmartWakeScheduler();
+    // now = アラーム+1分・時分は一致しない・LIGHT・達成済み → 修正前は発火していた
+    const r = s.shouldFireSmartWake({
+      nowMs: at(61),
+      alarmMs: at(60),
+      phase: 'LIGHT_SLEEP',
+      sleepLengthMinutes: 500,
+      alarmAlreadyRinging: false,
+      lastRingingTs: null,
+      trialValid: true,
+    });
+    expect(r.fire).toBe(false);
+  });
+});

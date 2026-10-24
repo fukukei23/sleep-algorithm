@@ -121,8 +121,12 @@ export class RemIntervalRecorder {
     this.lastPhase = phase;
   }
 
+  /** 区間のディープコピーを返す（呼び出し側の破壊的変更から内部状態を保護・MLR r2修正） */
   getIntervals(): { deep: Interval[]; light: Interval[] } {
-    return { deep: this.deep, light: this.light };
+    return {
+      deep: this.deep.map((i) => ({ ...i })),
+      light: this.light.map((i) => ({ ...i })),
+    };
   }
 
   /** 測定セッション再開時に区間をクリアする（MLR r1修正） */

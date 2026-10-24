@@ -147,3 +147,16 @@ describe('ActivityClassifier（仕様メモ §1 活動分類）', () => {
     });
   });
 });
+
+describe('MLR r2修正の回帰テスト', () => {
+  test('720窓回転後も判定が破綻しない（windowロールオーバー）', () => {
+    const c = new ActivityClassifier();
+    // 720サンプル: 前半360が振幅5・後半360が振幅1（回転で前半の高活動が窓外へ出る経路）
+    for (let i = 0; i < 360; i++) c.update(5.0);
+    for (let i = 0; i < 360; i++) c.update(1.0);
+    // 721サンプル目: 高活動が完全に窓外 → norm=1 → peak<=1 → 無活動
+    const flags = c.update(1.0);
+    expect(flags.isSomeActivity).toBe(false);
+    expect(flags.isHighActivity).toBe(false);
+  });
+});

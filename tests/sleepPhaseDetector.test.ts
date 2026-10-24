@@ -161,3 +161,23 @@ describe('MLR r1修正の回帰テスト', () => {
     expect(r.getIntervals().light).toHaveLength(0);
   });
 });
+
+describe('MLR r2修正の回帰テスト', () => {
+  test('getIntervalsはディープコピーを返す（外部変更が内部に波及しない）', () => {
+    const r = new RemIntervalRecorder();
+    r.onPhase('DEEP_SLEEP', 0);
+    r.onPhase('LIGHT_SLEEP', 60 * 1000);
+    const before = r.getIntervals();
+    before.deep[0]!.end = 999999; // 外部で破壊的変更
+    expect(r.getIntervals().deep[0]!.end).not.toBe(999999);
+  });
+
+  test('DEEP→UNKNOWN→DEEPは区間が分かれる（UNKNOWN挟込）', () => {
+    const r = new RemIntervalRecorder();
+    r.onPhase('DEEP_SLEEP', 0);
+    r.onPhase('UNKNOWN', 60 * 1000); // 段階不明
+    r.onPhase('DEEP_SLEEP', 120 * 1000);
+    const { deep } = r.getIntervals();
+    expect(deep).toHaveLength(2); // UNKNOWNで区間が分割される
+  });
+});

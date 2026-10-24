@@ -103,7 +103,7 @@ export class SleepScoreCalculator {
         const passed = v >= spec.limitPositive && v <= spec.limitNegative;
         // DURATIONの表示進捗だけは理想睡眠時間ベースの特例（§4.3）
         const progress =
-          key === 'DURATION' && this.options.idealSleepMinutes
+          key === 'DURATION' && this.options.idealSleepMinutes !== undefined
             ? clamp100(Math.round((v / this.options.idealSleepMinutes) * 100))
             : v < spec.limitPositive
               ? clamp100(Math.round((v / spec.limitPositive) * 100))
