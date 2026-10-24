@@ -76,9 +76,9 @@ for (const { phase, minutes } of PHASE_PLAN) {
     truth.push(phase);
   }
 }
-// ランダムな寝返り（高振幅スパイク・1.5〜3.0%）を浅眠/レム中に挿入
+// ランダムな寝返り（高振幅スパイク・1.5%）を浅眠/レム中に挿入（MLR r4修正: 深眠にも挿入されていたコメント不一致）
 for (let i = 0; i < SAMPLES; i++) {
-  if (truth[i] !== 'wake' && rand() < 0.015) {
+  if ((truth[i] === 'light' || truth[i] === 'rem') && rand() < 0.015) {
     amplitudes[i] = 0.9 + rand() * 2.1;
   }
 }
@@ -110,6 +110,16 @@ for (let i = 0; i < SAMPLES; i++) {
   results.push({ idx: i, ts: START_MS + i * MIN_MS, amplitude: amplitudes[i], truth: truth[i], flags, phase });
 }
 
+/** truth×判定の混同行列（MLR r4修正: 合成側妥当性検査の内部指標として残置） */
+function confusionMatrix(): Record<string, Record<string, number>> {
+  const m: Record<string, Record<string, number>> = {};
+  for (const r of results) {
+    m[r.truth] ??= {};
+    m[r.truth][r.phase] = (m[r.truth][r.phase] ?? 0) + 1;
+  }
+  return m;
+}
+
 // ===== 3. スコア計算（合成記録から実測値を算出） =====
 const deepSamples = results.filter((r) => r.phase === 'DEEP_SLEEP').length;
 const judged = results.filter((r) => r.phase !== 'UNKNOWN').length;
@@ -131,12 +141,14 @@ const scorePct = score.getScorePercentage();
 // ===== 4. 出力 =====
 mkdirSync('validation/out', { recursive: true });
 
-const hypno = ['sample_index,timestamp_ms,amplitude,truth_phase,phase', ...results.map((r) => `${r.idx},${r.ts},${r.amplitude.toFixed(4)},${r.truth},${r.phase}`)].join('\n');
+const hypno = ['sample_index,timestamp_ms,amplitude,truth_phase,phase,flag_some,flag_high', ...results.map((r) => `${r.idx},${r.ts},${r.amplitude.toFixed(4)},${r.truth},${r.phase},${r.flags.isSomeActivity},${r.flags.isHighActivity}`)].join('\n');
 writeFileSync('validation/out/hypnogram.csv', hypno + '\n');
 writeFileSync(
   'validation/out/score.json',
   JSON.stringify(
     {
+      purpose: 'synthetic-debug-only, NOT for cross-app score comparison（原典スコアとの比較には使わない）',
+      truth_vs_judgement_confusion: confusionMatrix(),
       meta: { samples: SAMPLES, start_ms: START_MS, generator_seed: 20261025 },
       phase_counts: {
         DEEP_SLEEP: deepSamples,
@@ -158,5 +170,4 @@ writeFileSync(
 console.log(`samples=${SAMPLES}`);
 console.log(`phase: DEEP=${deepSamples} LIGHT=${results.filter((r) => r.phase === 'LIGHT_SLEEP').length} UNKNOWN=${results.filter((r) => r.phase === 'UNKNOWN').length}`);
 console.log(`deep_ratio=${deepRatio.toFixed(4)} efficiency=${efficiency.toFixed(4)} score=${scorePct}%`);
-console.log(`NO_ACTIVITY object identity check: ${classifier.update(0) === NO_ACTIVITY}`);
 console.log('out: validation/out/hypnogram.csv, validation/out/score.json');
