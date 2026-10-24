@@ -1,0 +1,16 @@
+{
+  "name": "sleep-algorithm",
+  "version": "0.1.0",
+  "description": "Clean-room sleep tracking algorithm core (activity classification, sleep phase detection, awake detection, sleep score, smart wake, SRI)",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "typescript": "^5.5.0"
+  }
+}

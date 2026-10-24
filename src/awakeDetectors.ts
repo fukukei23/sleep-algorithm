@@ -1,0 +1,175 @@
+import { NO_ACTIVITY } from './types';
+
+/** 覚醒検知器の共通インターフェース（仕様メモ §3） */
+export interface AwakeDetector {
+  isAwake(...args: never[]): boolean;
+  stop(): void;
+}
+
+/** 高活動量検知（仕様メモ §3・移動平均がしきい値超で覚醒・milli-G自動補正） */
+export class AverageActivityOverThresholdDetector {
+  private callCount = 0;
+  private sum = 0;
+  private looksLikeMilliG = false;
+  private lastResult = false;
+
+  constructor(private readonly threshold: number) {}
+
+  /** 活動値を1サンプル入力 */
+  update(activity: number): boolean {
+    this.callCount++;
+    if (activity > 150.0 && !this.looksLikeMilliG) {
+      this.looksLikeMilliG = true;
+    }
+    const effectiveThreshold = this.looksLikeMilliG ? this.threshold * 100.0 : this.threshold;
+    this.sum += activity;
+    const avg = this.sum / this.callCount;
+    this.lastResult = this.callCount >= 30 && avg > effectiveThreshold;
+    return this.lastResult;
+  }
+
+  isAwake(): boolean {
+    return this.lastResult;
+  }
+
+  stop(): void {}
+}
+
+/** 高活動頻度検知（仕様メモ §3・平均+3σ超フラグの直近窓比率で覚醒判定・純関数） */
+export class HighActivityFrequencyDetector {
+  constructor(
+    private readonly options: { windowSize: number; threshold: number; sigmaMultiplier?: number }
+  ) {}
+
+  /** 振幅履歴全体を受け取り覚醒判定する */
+  isAwake(history: number[]): boolean {
+    const { windowSize, threshold, sigmaMultiplier = 3.0 } = this.options;
+    if (history.length < windowSize) return false;
+    const mean = history.reduce((a, b) => a + b, 0) / history.length;
+    const variance = history.reduce((a, b) => a + (b - mean) ** 2, 0) / history.length;
+    const sigma = Math.sqrt(variance);
+    const flags: number[] = history.map((v) => (v > mean + sigmaMultiplier * sigma ? 1 : 0));
+    const recent = flags.slice(-windowSize);
+    const ratio = recent.reduce((a, b) => a + b, 0) / recent.length;
+    return ratio >= threshold;
+  }
+
+  stop(): void {}
+}
+
+/**
+ * スマホ使用検知（仕様メモ §3・画面ON継続時間で覚醒・スクリーンセーバー時は別閾値）。
+ * 定数値は仕様メモ §4.4 に基づく実装裁量（原典の正確値は未解析）。
+ */
+export class PhoneUsageDetector {
+  /** 通常時: 画面ON最小継続時間（2分） */
+  static readonly SCREEN_ON_MIN_TIME_MS = 2 * 60 * 1000;
+  /** スクリーンセーバー時: 最小継続時間（15分） */
+  static readonly SCREEN_ON_MIN_TIME_SCREENSAVER_MS = 15 * 60 * 1000;
+  /** 画面ON最大継続時間（60分超は覚醒判定を打ち切り=省電力） */
+  static readonly SCREEN_ON_MAX_TIME_MS = 60 * 60 * 1000;
+
+  private screenOnStart: number | null = null;
+  private isScreenSaver = false;
+  private lastResult = false;
+
+  onScreenOn(timestampMs: number): void {
+    this.screenOnStart = timestampMs;
+  }
+
+  onScreenOff(_timestampMs: number): void {
+    this.screenOnStart = null;
+    this.lastResult = false;
+  }
+
+  setScreenSaver(v: boolean): void {
+    this.isScreenSaver = v;
+  }
+
+  /** 現在時刻で覚醒判定する */
+  isAwake(nowMs: number): boolean {
+    if (this.screenOnStart === null) {
+      this.lastResult = false;
+      return false;
+    }
+    const onDuration = nowMs - this.screenOnStart;
+    if (onDuration > PhoneUsageDetector.SCREEN_ON_MAX_TIME_MS) {
+      this.lastResult = false;
+      return false;
+    }
+    const minTime = this.isScreenSaver
+      ? PhoneUsageDetector.SCREEN_ON_MIN_TIME_SCREENSAVER_MS
+      : PhoneUsageDetector.SCREEN_ON_MIN_TIME_MS;
+    this.lastResult = onDuration >= minTime;
+    return this.lastResult;
+  }
+
+  stop(): void {}
+}
+
+export interface SunState {
+  sunriseMs: number;
+  sunsetMs: number;
+}
+
+/**
+ * 照度検知（仕様メモ §3・夜間のみ照度で覚醒・日中は無効）。
+ * 感度→luxしきい値テーブルは実装裁量（§4.4）。
+ */
+export class LightsOnDetector {
+  /** 感度レベル→luxしきい値（低感度→高しきい値） */
+  static readonly LUX_THRESHOLDS = [200, 50, 10, 5];
+
+  private lux = 0;
+
+  constructor(private readonly options: { sensitivity: number }) {}
+
+  updateLux(lux: number): void {
+    this.lux = lux;
+  }
+
+  /** 現在時刻と日の出/日の入りを受け取り覚醒判定する */
+  isAwake(nowMs: number, sun: SunState): boolean {
+    // 日中（日の出後〜日の入り前）は照度覚醒を無効化
+    if (nowMs >= sun.sunriseMs && nowMs < sun.sunsetMs) return false;
+    const idx = this.options.sensitivity - 1;
+    const threshold =
+      idx >= 0 && idx < LightsOnDetector.LUX_THRESHOLDS.length
+        ? (LightsOnDetector.LUX_THRESHOLDS[idx] ?? 10)
+        : 10;
+    return this.lux > threshold;
+  }
+
+  stop(): void {}
+}
+
+/** 覚醒検知器のOR合成（仕様メモ §3） */
+export class EnsembleAwakeDetector {
+  private readonly detectors: { isAwake: () => boolean }[] = [];
+  private forced: boolean | null = null;
+
+  add(detector: { isAwake: () => boolean }): boolean {
+    this.detectors.push(detector);
+    return true;
+  }
+
+  isAwake(): boolean {
+    if (this.forced !== null) return this.forced;
+    return this.detectors.some((d) => d.isAwake());
+  }
+
+  forceAwakeNow(): void {
+    this.forced = true;
+  }
+
+  forceNotAwake(): void {
+    this.forced = false;
+  }
+
+  stop(): void {
+    this.forced = null;
+  }
+}
+
+// NO_ACTIVITY は段階判定と共通の「無活動」定数（将来の加速度直結経路用）
+export const NO_ACTIVITY_FLAGS = NO_ACTIVITY;
