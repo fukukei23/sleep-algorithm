@@ -8,8 +8,10 @@ export interface AwakeDetector {
 
 /** 高活動量検知（仕様メモ §3・移動平均がしきい値超で覚醒・milli-G自動補正） */
 export class AverageActivityOverThresholdDetector {
+  /** 移動平均の窓（仕様メモ §3「移動平均」・評価開始条件と同じ30サンプルで統一） */
+  private static readonly AVERAGE_WINDOW = 30;
+  private readonly history: number[] = [];
   private callCount = 0;
-  private sum = 0;
   private looksLikeMilliG = false;
   private lastResult = false;
 
@@ -22,8 +24,11 @@ export class AverageActivityOverThresholdDetector {
       this.looksLikeMilliG = true;
     }
     const effectiveThreshold = this.looksLikeMilliG ? this.threshold * 100.0 : this.threshold;
-    this.sum += activity;
-    const avg = this.sum / this.callCount;
+    this.history.push(activity);
+    if (this.history.length > AverageActivityOverThresholdDetector.AVERAGE_WINDOW) {
+      this.history.shift();
+    }
+    const avg = this.history.reduce((a, b) => a + b, 0) / this.history.length;
     this.lastResult = this.callCount >= 30 && avg > effectiveThreshold;
     return this.lastResult;
   }
@@ -32,7 +37,11 @@ export class AverageActivityOverThresholdDetector {
     return this.lastResult;
   }
 
-  stop(): void {}
+  stop(): void {
+    this.history.length = 0;
+    this.callCount = 0;
+    this.lastResult = false;
+  }
 }
 
 /** 高活動頻度検知（仕様メモ §3・平均+3σ超フラグの直近窓比率で覚醒判定・純関数） */
@@ -60,21 +69,26 @@ export class HighActivityFrequencyDetector {
 /**
  * スマホ使用検知（仕様メモ §3・画面ON継続時間で覚醒・スクリーンセーバー時は別閾値）。
  * 定数値は仕様メモ §4.4 に基づく実装裁量（原典の正確値は未解析）。
+ * MLR r1修正: MAX超過でfalseを返すのは「覚醒でない」ことと矛盾するため、MAXは
+ * 判定対象の継続時間の頭打ち（cap）とし・MIN以上なら覚醒を継続報告する。
+ * screensaver は onScreenOn 時点の値でスナップショット（判定時点の状態競合を遮断）。
  */
 export class PhoneUsageDetector {
   /** 通常時: 画面ON最小継続時間（2分） */
   static readonly SCREEN_ON_MIN_TIME_MS = 2 * 60 * 1000;
   /** スクリーンセーバー時: 最小継続時間（15分） */
   static readonly SCREEN_ON_MIN_TIME_SCREENSAVER_MS = 15 * 60 * 1000;
-  /** 画面ON最大継続時間（60分超は覚醒判定を打ち切り=省電力） */
+  /** 画面ON継続時間の累積上限（これ以上は覚醒判定を継続報告する・省電力の打ち切りではない） */
   static readonly SCREEN_ON_MAX_TIME_MS = 60 * 60 * 1000;
 
   private screenOnStart: number | null = null;
-  private isScreenSaver = false;
+  private screenSaverSetting = false;
+  private screenSaverAtOn = false;
   private lastResult = false;
 
   onScreenOn(timestampMs: number): void {
     this.screenOnStart = timestampMs;
+    this.screenSaverAtOn = this.screenSaverSetting; // ON開始時点でスナップショット確定
   }
 
   onScreenOff(_timestampMs: number): void {
@@ -82,8 +96,9 @@ export class PhoneUsageDetector {
     this.lastResult = false;
   }
 
+  /** スクリーンセーバー状態を設定する（次のonScreenOnから適用される） */
   setScreenSaver(v: boolean): void {
-    this.isScreenSaver = v;
+    this.screenSaverSetting = v;
   }
 
   /** 現在時刻で覚醒判定する */
@@ -93,18 +108,18 @@ export class PhoneUsageDetector {
       return false;
     }
     const onDuration = nowMs - this.screenOnStart;
-    if (onDuration > PhoneUsageDetector.SCREEN_ON_MAX_TIME_MS) {
-      this.lastResult = false;
-      return false;
-    }
-    const minTime = this.isScreenSaver
+    const cappedDuration = Math.min(onDuration, PhoneUsageDetector.SCREEN_ON_MAX_TIME_MS);
+    const minTime = this.screenSaverAtOn
       ? PhoneUsageDetector.SCREEN_ON_MIN_TIME_SCREENSAVER_MS
       : PhoneUsageDetector.SCREEN_ON_MIN_TIME_MS;
-    this.lastResult = onDuration >= minTime;
+    this.lastResult = cappedDuration >= minTime;
     return this.lastResult;
   }
 
-  stop(): void {}
+  stop(): void {
+    this.screenOnStart = null;
+    this.lastResult = false;
+  }
 }
 
 export interface SunState {

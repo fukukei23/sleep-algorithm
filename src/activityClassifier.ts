@@ -86,6 +86,8 @@ export class ActivityClassifier {
 
   /** 振幅（ベースライン除去済みの|a-baseline|）を1サンプル入力し活動フラグを得る（仕様メモ §1.2） */
   update(amplitude: number): ActivityFlags {
+    // MLR r1修正: 非有限値（NaN/Infinity）はRingBufferを永久汚染するため無活動扱いで棄却する
+    if (!Number.isFinite(amplitude)) return NO_ACTIVITY;
     this.amplitudes.push(amplitude);
     this.totalSamples++;
 

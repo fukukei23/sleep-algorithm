@@ -76,12 +76,20 @@ describe('PhoneUsageDetector（§3 スマホ使用検知）', () => {
     expect(d.isAwake(MIN_ON_MS + 2000)).toBe(false);
   });
 
-  test('スクリーンセーバー時は別閾値（より長い最小継続時間）で覚醒', () => {
+  test('スクリーンセーバー時は別閾値（より長い最小継続時間）で覚醒（ON開始時点のスナップショット）', () => {
     const d = new PhoneUsageDetector();
+    d.setScreenSaver(true); // ON開始前に設定（スナップショット契約）
     d.onScreenOn(0);
-    d.setScreenSaver(true);
     expect(d.isAwake(PhoneUsageDetector.SCREEN_ON_MIN_TIME_SCREENSAVER_MS - 1)).toBe(false);
     expect(d.isAwake(PhoneUsageDetector.SCREEN_ON_MIN_TIME_SCREENSAVER_MS)).toBe(true);
+  });
+
+  test('ON継続中にsetScreenSaver(false)されても閾値は変わらない（状態競合の遮断）', () => {
+    const d = new PhoneUsageDetector();
+    d.setScreenSaver(true);
+    d.onScreenOn(0);
+    d.setScreenSaver(false); // ON継続中に切られた（判定に影響しない）
+    expect(d.isAwake(PhoneUsageDetector.SCREEN_ON_MIN_TIME_MS + 1000)).toBe(false); // 2分では未達（15分要件のまま）
   });
 });
 
@@ -152,10 +160,10 @@ describe('EnsembleAwakeDetector（§3 OR合成）', () => {
 });
 
 describe('自己点検で追加した欠落テスト（coverage BrPart削減）', () => {
-  test('画面ONが最大継続時間（60分）超で覚醒判定を打ち切る', () => {
+  test('画面ONが最大継続時間（60分）超でも覚醒は継続報告される（MAXは判定の頭打ち・MLR r1修正）', () => {
     const d = new PhoneUsageDetector();
     d.onScreenOn(0);
-    expect(d.isAwake(PhoneUsageDetector.SCREEN_ON_MAX_TIME_MS + 1000)).toBe(false);
+    expect(d.isAwake(PhoneUsageDetector.SCREEN_ON_MAX_TIME_MS + 1000)).toBe(true);
   });
 
   test('Ensemble.stop()で強制状態が解除されdetector実判定に戻る', () => {
@@ -165,5 +173,27 @@ describe('自己点検で追加した欠落テスト（coverage BrPart削減）'
     expect(e.isAwake()).toBe(true);
     e.stop();
     expect(e.isAwake()).toBe(false); // 強制解除→detector実判定（false）
+  });
+});
+
+describe('MLR r1修正の回帰テスト', () => {
+  test('移動平均化: 静穏30サンプル後の急な高活動が直近30窓で検知される', () => {
+    const d = new AverageActivityOverThresholdDetector(1.5);
+    // 8時間相当の静穏（avg≈0.1）を300サンプル流す
+    for (let i = 0; i < 300; i++) d.update(0.1);
+    expect(d.isAwake()).toBe(false);
+    // 直近30サンプルが高活動(3.0)なら移動平均=3.0>1.5で覚醒（累積平均では0.39で未検知になる）
+    for (let i = 0; i < 30; i++) d.update(3.0);
+    expect(d.isAwake()).toBe(true);
+  });
+
+  test('stop()で累積状態がリセットされ再評価が空スタートになる', () => {
+    const d = new AverageActivityOverThresholdDetector(1.5);
+    for (let i = 0; i < 100; i++) d.update(10.0);
+    expect(d.isAwake()).toBe(true);
+    d.stop();
+    // リセット後はcallCount<30のため覚醒しない
+    d.update(0.0);
+    expect(d.isAwake()).toBe(false);
   });
 });

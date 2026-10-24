@@ -22,6 +22,8 @@ export interface SmartWakeInput {
   sleepLengthMinutes: number;
   alarmAlreadyRinging: boolean;
   lastRingingTs: number | null;
+  /** アラーム個別のスマート窓設定（分・§5.1の smartWindowOverride・未指定ならグローバル30分） */
+  smartWindowOverride?: number;
   /** トライアル/使用制限の有効性（§5.3） */
   trialValid?: boolean;
 }
@@ -87,7 +89,11 @@ export class SmartWakeScheduler {
 
     const trialValid = input.trialValid !== false;
     const targetAchieved = this.targetSleepAchieved(input.sleepLengthMinutes);
-    const inSmartPeriod = this.isInSmartPeriod(input.nowMs, input.alarmMs, DEFAULT_WINDOW_MINUTES, {
+    // §5.1: 窓はアラーム個別設定>=0が優先・無ければグローバル30分（MLR r1修正: 個別設定が無視されていた）
+    const windowMinutes = SmartWakeScheduler.resolveSmartPeriod(
+      { smartWindowOverride: input.smartWindowOverride }
+    );
+    const inSmartPeriod = this.isInSmartPeriod(input.nowMs, input.alarmMs, windowMinutes, {
       snoozing: false,
       targetAchieved,
     });

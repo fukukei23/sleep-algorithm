@@ -200,3 +200,38 @@ describe('自己点検で追加した欠落テスト（coverage BrPart削減）'
     expect(r.fire).toBe(false);
   });
 });
+
+describe('MLR r1修正の回帰テスト（個別窓設定が本番経路に効くこと）', () => {
+  const base = {
+    nowMs: at(45),
+    alarmMs: at(60),
+    phase: 'LIGHT_SLEEP' as const,
+    sleepLengthMinutes: 500,
+    alarmAlreadyRinging: false,
+    lastRingingTs: null,
+    trialValid: true,
+  };
+
+  test('個別窓0（無効設定）のアラームは smart期間に入らない → 発火しない', () => {
+    const s = new SmartWakeScheduler();
+    const r = s.shouldFireSmartWake({ ...base, smartWindowOverride: 0 });
+    expect(r.fire).toBe(false); // 修正前は30分固定で発火していた（結合欠陥）
+  });
+
+  test('個別窓5分のアラームはアラーム5分前からのみsmart期間に入る（40分前では未発火）', () => {
+    const s = new SmartWakeScheduler();
+    // now=at(45)はアラーム(at 60)の15分前 → 窓5ではまだsmart期間外
+    const r1 = s.shouldFireSmartWake({ ...base, smartWindowOverride: 5 });
+    expect(r1.fire).toBe(false);
+    // now=at(56)はアラームの4分前 → 窓5内 → 発火
+    const r2 = s.shouldFireSmartWake({ ...base, nowMs: at(56), smartWindowOverride: 5 });
+    expect(r2.fire).toBe(true);
+  });
+
+  test('個別窓-1（無効値）はグローバル30分にフォールバックする', () => {
+    const s = new SmartWakeScheduler();
+    // now=at(45)（15分前）は窓30ではsmart期間内・窓5では圏外 → -1は30分扱い
+    const r = s.shouldFireSmartWake({ ...base, smartWindowOverride: -1 });
+    expect(r.fire).toBe(true);
+  });
+});

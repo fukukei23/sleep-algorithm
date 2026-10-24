@@ -141,3 +141,23 @@ describe('自己点検で追加した欠落テスト（coverage BrPart削減）'
     expect(light[0]).toEqual({ start: 60 * 1000 - 10 * 1000, end: 90 * 1000 });
   });
 });
+
+describe('MLR r1修正の回帰テスト', () => {
+  test('reset()後に欠損率が旧フラグの影響を受けない（lossWindowクリア）', () => {
+    const d = new SleepPhaseDetector();
+    feed(d, 12, HIGH); // LIGHT
+    feed(d, 5, null); // 5連続欠損 → リセット
+    feed(d, 1, null); // リセット後の欠損1個（旧実装では即再リセットの恐れ）
+    feed(d, 12, HIGH); // 12サンプル有効入力 → 判定復活
+    expect(d.update(HIGH)).toBe('LIGHT_SLEEP');
+  });
+
+  test('RemIntervalRecorder.reset()で区間がクリアされる', () => {
+    const r = new RemIntervalRecorder();
+    r.onPhase('DEEP_SLEEP', 0);
+    r.onPhase('LIGHT_SLEEP', 60 * 1000);
+    r.reset();
+    expect(r.getIntervals().deep).toHaveLength(0);
+    expect(r.getIntervals().light).toHaveLength(0);
+  });
+});

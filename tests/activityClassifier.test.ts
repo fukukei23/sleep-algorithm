@@ -13,6 +13,17 @@ describe('ActivityClassifier（仕様メモ §1 活動分類）', () => {
     expect(c.update(1.0)).toEqual(NO_ACTIVITY);
   });
 
+  test('MLR r1修正: 非有限値（NaN/Infinity）は棄却され履歴を汚染しない', () => {
+    const c = new ActivityClassifier();
+    expect(c.update(NaN)).toEqual(NO_ACTIVITY);
+    expect(c.update(Infinity)).toEqual(NO_ACTIVITY);
+    // 汚染なし: 正常入力が既存の黄金値どおり判定される
+    feed(c, 720, 1.0);
+    const flags = c.update(10.0);
+    expect(flags.isSomeActivity).toBe(true);
+    expect(flags.isHighActivity).toBe(true);
+  });
+
   test('安定1.0系列後に10.0へ急変 → norm=10・peak=10・score=10 → 両フラグON', () => {
     const c = new ActivityClassifier();
     feed(c, 720, 1.0);

@@ -87,6 +87,7 @@ export class SleepPhaseDetector {
     this.pointsCount = 0;
     this.highFlags = [];
     this.someFlags = [];
+    this.lossWindow = []; // MLR r1修正: リセット後の欠損率が旧フラグの影響を受けないようにする
   }
 
   private pushLoss(v: boolean): void {
@@ -122,5 +123,12 @@ export class RemIntervalRecorder {
 
   getIntervals(): { deep: Interval[]; light: Interval[] } {
     return { deep: this.deep, light: this.light };
+  }
+
+  /** 測定セッション再開時に区間をクリアする（MLR r1修正） */
+  reset(): void {
+    this.lastPhase = null;
+    this.deep.length = 0;
+    this.light.length = 0;
   }
 }

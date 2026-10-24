@@ -7,8 +7,11 @@ export interface ActivityFlags {
   isHighActivity: boolean;
 }
 
-/** 活動なし（無活動判定に相当する固定値） */
-export const NO_ACTIVITY: ActivityFlags = { isSomeActivity: false, isHighActivity: false };
+/** 活動なし（無活動判定に相当する固定値・freezeで破壊的書換を防止） */
+export const NO_ACTIVITY: Readonly<ActivityFlags> = Object.freeze({
+  isSomeActivity: false,
+  isHighActivity: false,
+} as ActivityFlags);
 
 /** 時間区間（ミリ秒・[start, end]） */
 export interface Interval {
