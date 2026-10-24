@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "samples": 480,
+    "start_ms": 1792969200000,
+    "generator_seed": 20261025
+  },
+  "phase_counts": {
+    "DEEP_SLEEP": 460,
+    "LIGHT_SLEEP": 9,
+    "UNKNOWN": 11
+  },
+  "deep_ratio": 0.9808,
+  "efficiency_synthetic": 0.9167,
+  "score_percentage": 75,
+  "score_used_measures": 4,
+  "rem_intervals": {
+    "deep": [
+      {
+        "start": 1792969560000,
+        "end": 1792997400000
+      }
+    ],
+    "light": [
+      {
+        "start": 1792997450000,
+        "end": 1792997940000
+      }
+    ]
+  }
+}
