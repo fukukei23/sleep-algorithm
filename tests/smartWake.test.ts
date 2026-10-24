@@ -252,3 +252,37 @@ describe('MLR r2修正の回帰テスト', () => {
     expect(r.fire).toBe(false);
   });
 });
+
+describe('MLR r3修正の回帰テスト', () => {
+  test('グローバル窓設定（≠30）が本番経路に伝播する', () => {
+    const s = new SmartWakeScheduler({ globalWindowMinutes: 60 });
+    const base = {
+      alarmMs: at(60),
+      phase: 'LIGHT_SLEEP' as const,
+      sleepLengthMinutes: 500,
+      alarmAlreadyRinging: false,
+      lastRingingTs: null,
+      trialValid: true,
+    };
+    // now=アラーム45分前・個別設定なし → グローバル60分窓ならsmart期間内（30分窓なら圏外）
+    const r = s.shouldFireSmartWake({ ...base, nowMs: at(15) });
+    expect(r.fire).toBe(true); // 60分窓: 15+60=75 > 60 → smart期間内
+    // 個別設定5分がグローバル60分より優先される
+    const r2 = s.shouldFireSmartWake({ ...base, nowMs: at(15), smartWindowOverride: 5 });
+    expect(r2.fire).toBe(false); // 15+5=20 < 60 → smart期間外
+  });
+
+  test('前回鳴動からちょうど1時間は再判定可（<1hで抑止の原典整合）', () => {
+    const s = new SmartWakeScheduler();
+    const r = s.shouldFireSmartWake({
+      nowMs: at(45),
+      alarmMs: at(60),
+      phase: 'LIGHT_SLEEP',
+      sleepLengthMinutes: 500,
+      alarmAlreadyRinging: false,
+      lastRingingTs: at(45) - 60 * MIN, // ちょうど1時間前
+      trialValid: true,
+    });
+    expect(r.fire).toBe(true); // 1時間ちょうどは「超過」扱い（<1hのみ抑止）
+  });
+});

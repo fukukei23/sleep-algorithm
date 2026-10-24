@@ -87,6 +87,8 @@ export class PhoneUsageDetector {
   private lastResult = false;
 
   onScreenOn(timestampMs: number): void {
+    // MLR r3修正: OSの重複ONイベントで screenOnStart が上書きされ継続時間がリセットされるのを防ぐ
+    if (this.screenOnStart !== null) return;
     this.screenOnStart = timestampMs;
     this.screenSaverAtOn = this.screenSaverSetting; // ON開始時点でスナップショット確定
   }
@@ -160,10 +162,10 @@ export class LightsOnDetector {
 
 /** 覚醒検知器のOR合成（仕様メモ §3） */
 export class EnsembleAwakeDetector {
-  private readonly detectors: { isAwake: () => boolean }[] = [];
+  private readonly detectors: { isAwake: () => boolean; stop?: () => void }[] = [];
   private forced: boolean | null = null;
 
-  add(detector: { isAwake: () => boolean }): boolean {
+  add(detector: { isAwake: () => boolean; stop?: () => void }): boolean {
     this.detectors.push(detector);
     return true;
   }
@@ -183,6 +185,8 @@ export class EnsembleAwakeDetector {
 
   stop(): void {
     this.forced = null;
+    // MLR r3修正: 子detectorのstop()を伝播（履歴残留を防ぐ・stop未実装detectorは無視）
+    for (const d of this.detectors) d.stop?.();
   }
 }
 

@@ -8,6 +8,8 @@ export interface SmartWakeSettings {
   actOnTargetSleep?: boolean;
   /** 理想睡眠時間（分） */
   idealSleepMinutes?: number;
+  /** グローバルのスマート窓（分・未指定は30・MLR r3修正: 設定値が本番経路に伝播していなかった） */
+  globalWindowMinutes?: number;
 }
 
 export interface SmartPeriodContext {
@@ -79,9 +81,9 @@ export class SmartWakeScheduler {
   shouldFireSmartWake(input: SmartWakeInput): SmartWakeDecision {
     const noFire: SmartWakeDecision = { fire: false, suspendOriginalAlarm: false };
 
-    // 未鳴動条件（前回鳴動から1時間超過なら再判定可）
+    // 未鳴動条件（前回鳴動から1時間超過なら再判定可・MLR r3修正: 原典の「<1hで抑止」に整合し1hちょうどは再判定可）
     if (input.alarmAlreadyRinging) return noFire;
-    if (input.lastRingingTs !== null && input.nowMs - input.lastRingingTs <= RINGING_STALE_MS) {
+    if (input.lastRingingTs !== null && input.nowMs - input.lastRingingTs < RINGING_STALE_MS) {
       return noFire;
     }
 
@@ -90,9 +92,11 @@ export class SmartWakeScheduler {
 
     const trialValid = input.trialValid !== false;
     const targetAchieved = this.targetSleepAchieved(input.sleepLengthMinutes);
-    // §5.1: 窓はアラーム個別設定>=0が優先・無ければグローバル30分（MLR r1修正: 個別設定が無視されていた）
+    // §5.1: 窓はアラーム個別設定>=0が優先・無ければグローバル設定（未指定は30分）
+    // MLR r3修正: グローバル窓設定が本番経路に伝播していなかった
     const windowMinutes = SmartWakeScheduler.resolveSmartPeriod(
-      { smartWindowOverride: input.smartWindowOverride }
+      { smartWindowOverride: input.smartWindowOverride },
+      this.settings.globalWindowMinutes ?? 30
     );
     const inSmartPeriod = this.isInSmartPeriod(input.nowMs, input.alarmMs, windowMinutes, {
       snoozing: false,

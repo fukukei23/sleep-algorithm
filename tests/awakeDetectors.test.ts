@@ -197,3 +197,20 @@ describe('MLR r1修正の回帰テスト', () => {
     expect(d.isAwake()).toBe(false);
   });
 });
+
+describe('MLR r3修正の回帰テスト', () => {
+  test('画面ON中にonScreenOnが重複呼び出されても継続時間はリセットされない', () => {
+    const d = new PhoneUsageDetector();
+    d.onScreenOn(0);
+    d.onScreenOn(60 * 1000); // 重複イベント（1分後に再来）— 無視される
+    expect(d.isAwake(3 * 60 * 1000)).toBe(true); // 3分経過=通常2分要件達成
+  });
+
+  test('Ensemble.stop()が子detectorのstop()を伝播する', () => {
+    let stopped = false;
+    const e = new EnsembleAwakeDetector();
+    e.add({ isAwake: () => true, stop: () => { stopped = true; } });
+    e.stop();
+    expect(stopped).toBe(true);
+  });
+});

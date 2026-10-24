@@ -59,7 +59,10 @@ const percent = score.getScorePercentage();
 - `SleepScoreCalculator`: `idealSleepMinutes` は `undefined` との区別で判定（0指定時も特例progressが適用される）
 - `computeRegularityIndex()`: **1日ちょうど1440要素**の boolean 配列 ×2（length≠1440 は throw・「データなし」は全false配列を渡すと -1 を返す）
 - センサー由来の生値（加速度・照度・BLE心拍）は adapter 層で変換してから渡す
-- `SmartWakeScheduler`: アラーム時刻は**端末ローカル時刻**前提（sameHourMinute の時分一致はローカルTZで評価）・smart wake の適用区間は `[alarm−窓, alarm)` の半開区間
+- `SmartWakeScheduler`: アラーム時刻は**端末ローカル時刻**前提（sameHourMinute の時分一致はローカルTZで評価）・smart wake の適用区間は `[alarm−窓, alarm)` の半開区間・**グローバル窓は `globalWindowMinutes`（未指定30分）**
+- **性能特性**: `ActivityClassifier` の中央値計算は毎サンプル O(n log n)（n=720）。**1サンプル=1分想定の設計**のため実用上問題ないが・高頻度サンプル（Hz級）での使用には移動中央値への置換が必要
+- `RemIntervalRecorder`: DEEP→LIGHT→DEEP と短時間で遷移した場合・5分遡り区間が前区間と**重複し得る**（原典仕様どおり・区間を合算する消費者側は重複除去が必要）
+- `SleepScoreCalculator`: `idealSleepMinutes` に非正値を渡した場合・progress は clamp100 により 0 または 100 に吸収される（undefined と区別される契約）
 
 ## クリーンルール宣言
 
