@@ -160,3 +160,27 @@ describe('MLR r2修正の回帰テスト', () => {
     expect(flags.isHighActivity).toBe(false);
   });
 });
+
+describe('lastScore（filteredHistory 相当のscore取得・§2.5ヒプノグラム入力用）', () => {
+  test('安定1.0系列後の10.0で lastScore=10（§1.2-5の圧縮スコア）', () => {
+    const c = new ActivityClassifier();
+    feed(c, 720, 1.0);
+    c.update(10.0);
+    expect(c.lastScore).toBe(10);
+  });
+
+  test('無活動判定時（peak<=1）は lastScore=0', () => {
+    const c = new ActivityClassifier();
+    feed(c, 720, 1.0);
+    c.update(1.0);
+    expect(c.lastScore).toBe(0);
+  });
+
+  test('非有限値は棄却され lastScore=0・前回値を保持しない', () => {
+    const c = new ActivityClassifier();
+    feed(c, 720, 1.0);
+    c.update(10.0); // score=10
+    c.update(NaN);
+    expect(c.lastScore).toBe(0);
+  });
+});

@@ -66,6 +66,12 @@ export class ActivityClassifier {
   private totalSamples = 0;
   private readonly someThreshold: number;
   private readonly highThreshold: number;
+  private lastScoreValue = 0;
+
+  /** 直近サンプルの圧縮スコア（§1.2-5・無活動/棄却時は0） */
+  get lastScore(): number {
+    return this.lastScoreValue;
+  }
 
   constructor(options: ActivityClassifierOptions = {}) {
     this.amplitudes = new RingBuffer(WINDOW_SIZE);
@@ -87,7 +93,10 @@ export class ActivityClassifier {
   /** 振幅（ベースライン除去済みの|a-baseline|）を1サンプル入力し活動フラグを得る（仕様メモ §1.2） */
   update(amplitude: number): ActivityFlags {
     // MLR r1修正: 非有限値（NaN/Infinity）はRingBufferを永久汚染するため無活動扱いで棄却する
-    if (!Number.isFinite(amplitude)) return NO_ACTIVITY;
+    if (!Number.isFinite(amplitude)) {
+      this.lastScoreValue = 0;
+      return NO_ACTIVITY;
+    }
     this.amplitudes.push(amplitude);
     this.totalSamples++;
 
@@ -98,7 +107,10 @@ export class ActivityClassifier {
 
     const peak = this.norms.max();
     // 無活動判定（仕様メモ §1.2-3）
-    if (peak <= 1.0) return NO_ACTIVITY;
+    if (peak <= 1.0) {
+      this.lastScoreValue = 0;
+      return NO_ACTIVITY;
+    }
 
     // 起動補正（仕様メモ §1.2-4）
     let effectivePeak = peak;
@@ -109,6 +121,7 @@ export class ActivityClassifier {
     // 圧縮スコア（仕様メモ §1.2-5）
     const exponent = 1 / Math.log10(effectivePeak);
     const score = Math.pow(Math.min(effectivePeak, norm), exponent);
+    this.lastScoreValue = score;
 
     return {
       isSomeActivity: score > this.someThreshold,
