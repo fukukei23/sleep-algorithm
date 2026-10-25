@@ -532,5 +532,13 @@ describe('ヒプノグラム生成パラメータ（仕様メモ §2.5）', () =
       const hist = [-5, -2, 1, 2, 3, 4, 5, 6, 7, 8];
       expect(getDeepSleepThreshold(10003, hist)).toBe(5);
     });
+
+    test('coverage自己点検: classifyActivitySegmentsはhistory長≠freq長で空配列', () => {
+      expect(classifyActivitySegments([1, 2, 3], [0, 0], 10008, 0, 30_000, 10_000)).toEqual([]);
+    });
+
+    test('coverage自己点検: detectREMは空配列入力で空配列', () => {
+      expect(detectREM([])).toEqual([]);
+    });
   });
 });
