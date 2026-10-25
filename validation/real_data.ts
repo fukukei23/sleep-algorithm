@@ -117,7 +117,7 @@ writeFileSync(
           F1_sampling_not_10s: medianInterval !== 10000,
           F2_parse_fail: false,
           F3_label_incompatible: 'REM非互換→2値比較（深眠/非深眠）で対応済み',
-          F4_agreement_below_50: null,
+          F4_agreement_below_50: 'not_evaluated（2値比較では原典定義の一致率を算出できないため未評価・代替観測としてdiffPctを参照）',
         },
       },
       own_judgement: {
@@ -162,19 +162,15 @@ if (diffPct > 10) {
 const fromMillis = samples[0]?.ts ?? START_MS;
 const toMillis = (samples[samples.length - 1]?.ts ?? START_MS) + 10_000;
 const awakeIntervals = detectAwakeIntervals(samples);
-const hypnoIntervals = computeHypnogram({
+// awakes 有無のみを切替える共通入力（REM変化の原因が awakes の有無であることを明示・MLR r2採用）
+const hypnoBase = {
   history: results.map((r) => r.score),
   flags: results.map((r) => (r.isHighActivity ? 1 : 0)),
   fromMillis,
   toMillis,
-  awakes: awakeIntervals,
-});
-const remBeforeAwake = computeHypnogram({
-  history: results.map((r) => r.score),
-  flags: results.map((r) => (r.isHighActivity ? 1 : 0)),
-  fromMillis,
-  toMillis,
-});
+};
+const hypnoIntervals = computeHypnogram({ ...hypnoBase, awakes: awakeIntervals });
+const remBeforeAwake = computeHypnogram(hypnoBase);
 
 const SAMPLE_MS = 10_000;
 const pctOf = (label: string): number => {
@@ -227,6 +223,12 @@ writeFileSync(
         rem_without_awake: remWithout,
         changed: remChanged,
         fail_condition: '実装後に覚醒区間を接続してもREM区間が一切変化しない時（覚醒区間ゼロ交差時は変化なしで正）',
+      },
+      awake_observability: {
+        awake_total_ms: awakeIntervals.reduce((sum, i) => sum + (i.end - i.start), 0),
+        awake_pct_of_recording: Number(((awakeIntervals.reduce((sum, i) => sum + (i.end - i.start), 0) / (samples.length * 10_000)) * 100).toFixed(2)),
+        original_app_awake_pct: 1,
+        note: '覚醒率が原典実測（1%）から大きく乖離する場合は覚醒過検知の異常疑い（MLR r2採用・異常検知用観測値）',
       },
       own_hypnogram_pct: {
         DEEP: Number(hypoDeepPct.toFixed(2)),
