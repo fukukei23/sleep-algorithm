@@ -202,12 +202,22 @@ export interface AwakeBatchOptions {
   enableFrequency?: boolean;
 }
 
+/** 欠損ギャップ判定の倍率（直前サンプル差のこの倍数超で区間を分断） */
+const GAP_FACTOR = 2;
+
 /**
  * 活動系列から覚醒区間を列挙する（仕様メモ §3 のバッチ版）。
- * 高活動量検知と高活動頻度検知の OR 合成でサンプル単位に覚醒判定し・
- * 連続する覚醒サンプルを「開始=覚醒先頭の 1 ループ前・終了=覚醒最終の次サンプル時刻」
- * の Interval に変換する（§3「覚醒開始（1 ループ前）〜終了（現在）」）。
- * 覚醒に最低窓サイズ分のサンプルが必要なため・flags[0] は常に非覚醒（j>=1 保証）。
+ * バッチ経路は活動系列のみから判定できる**高活動量検知と高活動頻度検知の OR 合成**の2検知器
+ * （PhoneUsage/LightsOn は画面ON/lux イベント入力が必要なため本関数の対象外・
+ * ストリーム経路は EnsembleAwakeDetector で4検知器合成になる）。
+ * サンプル単位に覚醒判定し・連続する覚醒サンプルを「開始=覚醒先頭の 1 ループ前
+ * （=1サンプル前・§3「覚醒開始（1 ループ前）」の語彙）・終了=覚醒最終の次サンプル時刻」
+ * の Interval に変換する。ts 差が直前サンプル差の GAP_FACTOR 倍超の欠損ギャップでは
+ * 区間を分断する（ギャップ帯が覚醒に化けるのを防ぐ）。
+ * 覚醒判定は高活動量検知の評価開始（callCount>=30）と高活動頻度検知の窓充足
+ * （history>=windowSize・かつ単調系列では σ=0 でフラグが立たない）が必要なため・
+ * flags[0..29] は常に非覚醒。特に flags[0]=false より区間化の j>=1 が保証され・
+ * endTs の samples[j-1] 参照は常に安全。
  */
 export function detectAwakeIntervals(
   samples: { ts: number; amp: number }[],
@@ -240,10 +250,21 @@ export function detectAwakeIntervals(
       continue;
     }
     let j = i;
-    while (j + 1 < awakeFlags.length && awakeFlags[j + 1]) j++;
+    let gapBreak = false;
+    while (j + 1 < awakeFlags.length && awakeFlags[j + 1]) {
+      const gap = (samples[j + 1] as { ts: number }).ts - (samples[j] as { ts: number }).ts;
+      const prevGap = (samples[j] as { ts: number }).ts - (samples[j - 1] as { ts: number }).ts;
+      if (gap > GAP_FACTOR * prevGap) {
+        gapBreak = true;
+        break;
+      }
+      j++;
+    }
     const startTs = i > 0 ? (samples[i - 1] as { ts: number }).ts : (samples[0] as { ts: number }).ts;
+    // 通常終了（次サンプルが非覚醒で近接）は次サンプル時刻で閉じる。
+    // 末尾・ギャップ分断時は最終覚醒サンプル時刻+直前差分（サンプル幅）で閉じる。
     const endTs =
-      j + 1 < samples.length
+      j + 1 < samples.length && !gapBreak
         ? (samples[j + 1] as { ts: number }).ts
         : (samples[j] as { ts: number }).ts + ((samples[j] as { ts: number }).ts - (samples[j - 1] as { ts: number }).ts);
     out.push({ start: startTs, end: endTs });

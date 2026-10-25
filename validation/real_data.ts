@@ -4,7 +4,8 @@
  * と比較する。
  *
  * 検収（2026-10-25実測）: ヘッダなし・カンマ区切り5列・サンプリング10秒（タイムスタンプ差分実測）
- * 値: 列2=活動振幅（9.8〜31の狭レンジ）・窓（6/30/720）は原典の10秒粒度サンプルに基づくため変換なしで投入
+ * 列: 0=タイムスタンプ・1=活動振幅（連続値）・2=活動値（対数正規的分布・原典判定入力と推定）・3/4=0/1フラグ列（活動フラグと推定・意味はL141実機比較検証で確定予定）
+ * 窓（6/30/720）は原典の10秒粒度サンプルに基づくため変換なしで投入
  *
  * 出力: validation/out/hypnogram_real.csv・real_comparison.json
  */
@@ -196,11 +197,12 @@ const hypnoCsv = ['label,start_ms,end_ms,length_ms', ...hypnoIntervals.map((i) =
 writeFileSync('validation/out/hypnogram_real_v2.csv', hypnoCsv + '\n');
 
 // 覚醒あり/なしのREM差異（fail条件検証: 覚醒区間を接続してもREM区間が一切変化しない時=fail）
+// 比較は区間集合の完全一致（順序は時系列で確定）・片側 some でなく両集合の直列化で判定
 const remOf = (out: { label: string }[]) => out.filter((i) => i.label === 'REM');
 const remWith = remOf(hypnoIntervals);
 const remWithout = remOf(remBeforeAwake);
-const remChanged = remWith.length !== remWithout.length ||
-  remWith.some((r, i) => remWithout[i] && (r.start !== remWithout[i].start || r.end !== remWithout[i].end));
+const remSig = (rs: { start: number; end: number }[]): string => rs.map((r) => `${r.start}:${r.end}`).join('|');
+const remChanged = remSig(remWith) !== remSig(remWithout);
 console.log(`=== 覚醒検知統合（§3・覚醒区間=${awakeIntervals.length}区間） ===`);
 console.log(`覚醒ありREM=${remWith.length}区間・なしREM=${remWithout.length}区間 → 変化: ${remChanged ? 'あり' : 'なし（覚醒区間ゼロ交差時は変化なしで正）'}`);
 

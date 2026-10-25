@@ -100,6 +100,42 @@ describe('detectAwakeIntervals（§3 バッチ覚醒区間列挙）', () => {
     expect(detectAwakeIntervals([])).toEqual([]);
   });
 
+  test('欠損ギャップ（直前間隔の2倍超）で覚醒区間が分断される', () => {
+    // 40静穏+40高活動（ts連続）→ idx80..119 相当を欠損（サンプル無し）→ ts=120..159 に40高活動
+    const samples: { ts: number; amp: number }[] = [];
+    for (let i = 0; i < 40; i++) samples.push({ ts: BASE_MS + i * STEP, amp: 0.3 });
+    for (let i = 40; i < 80; i++) samples.push({ ts: BASE_MS + i * STEP, amp: 10.0 });
+    for (let i = 120; i < 160; i++) samples.push({ ts: BASE_MS + i * STEP, amp: 10.0 });
+    const result = detectAwakeIntervals(samples, { enableFrequency: false });
+    expect(result.length).toBe(2);
+    const first = result[0]!;
+    const second = result[1]!;
+    // 第1区間はギャップ直前で閉じる（最終覚醒 samples[79]・end=ts+直前差分）
+    expect(first.end).toBe(BASE_MS + 80 * STEP);
+    // 第2区間はギャップ後から末尾まで（end=last.ts+直前差分=160×STEP）
+    expect(second.end).toBe(BASE_MS + 160 * STEP);
+    // 注記: 開始1ループ前拡張はギャップ直前のサンプルtsを指すため・区間境界の重なりは許容
+    expect(second.end).toBeGreaterThan(first.end);
+  });
+
+  test('系列末尾まで覚醒が続くと end は最終覚醒サンプル+直前差分で閉じる（末尾外挿ブランチ）', () => {
+    const amps = [...Array(40).fill(0.3), ...Array(40).fill(10.0)]; // 系列末尾まで高活動
+    const result = detectAwakeIntervals(series(amps), { enableFrequency: false });
+    expect(result.length).toBe(1);
+    const aw = result[0]!;
+    expect(aw.start).toBe(BASE_MS + 42 * STEP); // idx=43 覚醒開始・1ループ前
+    expect(aw.end).toBe(BASE_MS + amps.length * STEP); // last.ts + 直前差分(=STEP)
+  });
+
+  test('複合: 両検知器有効でも移動平均経路の覚醒は検出される（freq との OR 動作）', () => {
+    const amps = [...Array(40).fill(0.3), ...Array(40).fill(10.0), ...Array(40).fill(0.3)];
+    const result = detectAwakeIntervals(series(amps)); // enableFrequency 既定 true
+    expect(result.length).toBe(1);
+    const aw = result[0]!;
+    expect(aw.start).toBe(BASE_MS + 42 * STEP);
+    expect(aw.end).toBe(BASE_MS + 106 * STEP);
+  });
+
   test('enableFrequency:false で高活動頻度検知が無効化される', () => {
     const amps = [...Array(385).fill(0.5), ...Array(19).fill(1.2)];
     const result = detectAwakeIntervals(series(amps), { enableFrequency: false });
