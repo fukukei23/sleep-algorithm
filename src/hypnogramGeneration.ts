@@ -326,9 +326,9 @@ export function clearRemAtAwake(
 }
 
 export interface HypnogramInput {
-  /** 正規化活動値系列（filteredHistory 相当・負値=欠損） */
+  /** 正規化活動値系列（filteredHistory 相当・負値=欠損・空なら空配列を返す） */
   history: number[];
-  /** 高活動フラグ系列（0/1・DHA 相当） */
+  /** 高活動フラグ系列（0/1・DHA 相当・history より短い分は 0 埋め・長い分は切り捨て） */
   flags: number[];
   /** 記録開始時刻（ミリ秒） */
   fromMillis: number;
@@ -354,6 +354,7 @@ export type HypnogramOutput = (HypnogramEventInterval | RemEventInterval)[];
  * aggregation<1（version<10005 で可変 millisPerPoint が FRAMERATE 未満）は Error。
  */
 export function computeHypnogram(input: HypnogramInput): HypnogramOutput {
+  if (input.history.length === 0) return [];
   const version = input.version ?? 10008;
   const deviceTags = input.deviceTags ?? '';
   const millisPerPoint = getMillisPerPoint(

@@ -540,5 +540,39 @@ describe('ヒプノグラム生成パラメータ（仕様メモ §2.5）', () =
     test('coverage自己点検: detectREMは空配列入力で空配列', () => {
       expect(detectREM([])).toEqual([]);
     });
+
+    test('MLR r2指摘採用: history空はversion<10005でも空配列（RangeErrorでない）', () => {
+      // 実測: 修正前は THROWN: Invalid array length（coarse=NaN伝播→new Array(NaN)）
+      expect(computeHypnogram({ history: [], flags: [], fromMillis: 0, toMillis: 1_800_000, version: 10004 })).toEqual([]);
+      expect(computeHypnogram({ history: [], flags: [], fromMillis: 0, toMillis: 1_800_000 })).toEqual([]);
+    });
+
+    test('MLR r2指摘採用: percentileしきい値×REM生成のフル結合（version 10003）', () => {
+      // history=300点・12秒粒度（mpp=12000・aggregation=1）・しきい値=65パーセンタイル
+      // 履歴: 前半90点=1・中150点=5・後60点=1（昇順ソート: 1×150個・5×150個→65パーセンタイル=rank=ceil(0.65×300)=195番目=5）
+      // 分類: 1<5→DEEP(90点)・5>=5でfreq=0→LIGHT(150点)・1<5→DEEP(60点)
+      // 区間: DEEP[0,1080000]（18分・保持）LIGHT[1080000,2880000]（30分）DEEP[2880000,3600000]（12分→格下げ→LIGHT）
+      // → マージ: DEEP[0,1080000] LIGHT[1080000,3600000]
+      // REM判定: prev DEEP 18分>=10分・cur LIGHT 42分>=15分→remStart=1080000+600000=1680000
+      // remaining=42-10=32分→n=floor(32/5)=6→floor(7/2)=3→15分・min(32,min(50,15))=15分→remEnd=1680000+900000=2580000
+      // forbidden=0+3000000=3000000<=1680000はfalse・2580000-3000000<0→除外→REMなし（forbidden内のため）
+      const history: number[] = [
+        ...new Array(90).fill(1),
+        ...new Array(150).fill(5),
+        ...new Array(60).fill(1),
+      ];
+      const flags = new Array(300).fill(0);
+      const result = computeHypnogram({
+        history,
+        flags,
+        fromMillis: 0,
+        toMillis: 3_600_000,
+        version: 10003,
+      });
+      expect(result).toEqual([
+        { label: 'DEEP', start: 0, end: 1_080_000 },
+        { label: 'LIGHT', start: 1_080_000, end: 3_600_000 },
+      ]);
+    });
   });
 });
