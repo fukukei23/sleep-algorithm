@@ -1,4 +1,4 @@
-import { NO_ACTIVITY } from './types';
+import { NO_ACTIVITY, type Interval } from './types';
 
 /** 覚醒検知器の共通インターフェース（仕様メモ §3） */
 export interface AwakeDetector {
@@ -188,6 +188,68 @@ export class EnsembleAwakeDetector {
     // MLR r3修正: 子detectorのstop()を伝播（履歴残留を防ぐ・stop未実装detectorは無視）
     for (const d of this.detectors) d.stop?.();
   }
+}
+
+/** バッチ覚醒区間列挙のオプション（§3 表・実装裁量値は §4.4 に基づく明示値） */
+export interface AwakeBatchOptions {
+  /** 高活動量検知のしきい値（§3 表・既定 1.5） */
+  activityThreshold?: number;
+  /** 高活動頻度検知の直近窓（実装裁量・既定 30=評価開始条件と統一） */
+  freqWindowSize?: number;
+  /** 高活動頻度検知のフラグ比率しきい値（実装裁量・既定 0.5） */
+  freqThreshold?: number;
+  /** 高活動頻度検知を有効化（既定 true・スマホ使用/照度検知は実データに列が無いため合成検証のみ） */
+  enableFrequency?: boolean;
+}
+
+/**
+ * 活動系列から覚醒区間を列挙する（仕様メモ §3 のバッチ版）。
+ * 高活動量検知と高活動頻度検知の OR 合成でサンプル単位に覚醒判定し・
+ * 連続する覚醒サンプルを「開始=覚醒先頭の 1 ループ前・終了=覚醒最終の次サンプル時刻」
+ * の Interval に変換する（§3「覚醒開始（1 ループ前）〜終了（現在）」）。
+ * 覚醒に最低窓サイズ分のサンプルが必要なため・flags[0] は常に非覚醒（j>=1 保証）。
+ */
+export function detectAwakeIntervals(
+  samples: { ts: number; amp: number }[],
+  options: AwakeBatchOptions = {},
+): Interval[] {
+  if (samples.length === 0) return [];
+  const threshold = options.activityThreshold ?? 1.5;
+  const windowSize = options.freqWindowSize ?? 30;
+  const freqThreshold = options.freqThreshold ?? 0.5;
+  const enableFrequency = options.enableFrequency ?? true;
+
+  const avgDetector = new AverageActivityOverThresholdDetector(threshold);
+  const freqDetector = new HighActivityFrequencyDetector({
+    windowSize,
+    threshold: freqThreshold,
+  });
+
+  const awakeFlags: boolean[] = samples.map((sample, i) => {
+    const history = samples.slice(0, i + 1).map((s) => s.amp);
+    const byAvg = avgDetector.update(sample.amp);
+    const byFreq = enableFrequency && freqDetector.isAwake(history);
+    return byAvg || byFreq;
+  });
+
+  const out: Interval[] = [];
+  let i = 0;
+  while (i < awakeFlags.length) {
+    if (!awakeFlags[i]) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < awakeFlags.length && awakeFlags[j + 1]) j++;
+    const startTs = i > 0 ? (samples[i - 1] as { ts: number }).ts : (samples[0] as { ts: number }).ts;
+    const endTs =
+      j + 1 < samples.length
+        ? (samples[j + 1] as { ts: number }).ts
+        : (samples[j] as { ts: number }).ts + ((samples[j] as { ts: number }).ts - (samples[j - 1] as { ts: number }).ts);
+    out.push({ start: startTs, end: endTs });
+    i = j + 1;
+  }
+  return out;
 }
 
 // NO_ACTIVITY は段階判定と共通の「無活動」定数（将来の加速度直結経路用）

@@ -15,6 +15,7 @@ import {
   SleepPhaseDetector,
   RemIntervalRecorder,
   computeHypnogram,
+  detectAwakeIntervals,
 } from '../src/index';
 import type { SleepPhase } from '../src/index';
 
@@ -156,9 +157,18 @@ if (diffPct > 10) {
 
 // ===== 6. ヒプノグラム生成（仕様メモ §2.5・REM区間を含む表示用・2026-10-25追加解析） =====
 // history=圧縮スコア系列（§1.2-5・filteredHistory 相当）・flags=高活動フラグ（score>highThreshold の DHA 相当）
+// 覚醒区間は §3 検知器（高活動量+高活動頻度・OR合成）をバッチ列挙して接続（2026-10-25 覚醒検知統合）
 const fromMillis = samples[0]?.ts ?? START_MS;
 const toMillis = (samples[samples.length - 1]?.ts ?? START_MS) + 10_000;
+const awakeIntervals = detectAwakeIntervals(samples);
 const hypnoIntervals = computeHypnogram({
+  history: results.map((r) => r.score),
+  flags: results.map((r) => (r.isHighActivity ? 1 : 0)),
+  fromMillis,
+  toMillis,
+  awakes: awakeIntervals,
+});
+const remBeforeAwake = computeHypnogram({
   history: results.map((r) => r.score),
   flags: results.map((r) => (r.isHighActivity ? 1 : 0)),
   fromMillis,
@@ -185,6 +195,15 @@ console.log(`差: DEEP=${(hypoDeepPct - 18).toFixed(1)}pt・REM=${(hypoRemPct - 
 const hypnoCsv = ['label,start_ms,end_ms,length_ms', ...hypnoIntervals.map((i) => `${i.label},${i.start},${i.end},${i.end - i.start}`)].join('\n');
 writeFileSync('validation/out/hypnogram_real_v2.csv', hypnoCsv + '\n');
 
+// 覚醒あり/なしのREM差異（fail条件検証: 覚醒区間を接続してもREM区間が一切変化しない時=fail）
+const remOf = (out: { label: string }[]) => out.filter((i) => i.label === 'REM');
+const remWith = remOf(hypnoIntervals);
+const remWithout = remOf(remBeforeAwake);
+const remChanged = remWith.length !== remWithout.length ||
+  remWith.some((r, i) => remWithout[i] && (r.start !== remWithout[i].start || r.end !== remWithout[i].end));
+console.log(`=== 覚醒検知統合（§3・覚醒区間=${awakeIntervals.length}区間） ===`);
+console.log(`覚醒ありREM=${remWith.length}区間・なしREM=${remWithout.length}区間 → 変化: ${remChanged ? 'あり' : 'なし（覚醒区間ゼロ交差時は変化なしで正）'}`);
+
 // 再現性記録（MLR指摘採用・2026-10-25）: commit hash・覚醒区間有無を明記
 const gitResult = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf-8' });
 const commitHash = gitResult.stdout?.trim() ?? 'unknown';
@@ -192,12 +211,20 @@ writeFileSync(
   'validation/out/real_comparison_v2.json',
   JSON.stringify(
     {
-      purpose: 'ヒプノグラム生成（§2.5・REM区間含む）による再検証・2026-10-25追加解析後',
-      method: 'history=圧縮スコア系列（§1.2-5・filteredHistory相当）・flags=isHighActivity（DHA相当）・version=10008（現行）',
+      purpose: 'ヒプノグラム生成（§2.5・REM区間含む）による再検証・2026-10-25覚醒検知統合後',
+      method: 'history=圧縮スコア系列（§1.2-5・filteredHistory相当）・flags=isHighActivity（DHA相当）・version=10008（現行）・awakes=§3検知器バッチ列挙（高活動量+高活動頻度のOR合成）',
       reproducibility: {
         commit: commitHash,
-        awakes_given: false,
-        awakes_note: 'Activity_*.txtには覚醒イベント列が無いため覚醒時REM除去は未適用（将来の§3統合で接続）',
+        awakes_given: true,
+        awakes_note: '§3検知器（高活動量+高活動頻度）をActivity_*.txtの活動系列からバッチ列挙して接続（スマホ使用/照度は列が無いため対象外）',
+        awake_interval_count: awakeIntervals.length,
+        awake_intervals: awakeIntervals,
+      },
+      rem_change_check: {
+        rem_with_awake: remWith,
+        rem_without_awake: remWithout,
+        changed: remChanged,
+        fail_condition: '実装後に覚醒区間を接続してもREM区間が一切変化しない時（覚醒区間ゼロ交差時は変化なしで正）',
       },
       own_hypnogram_pct: {
         DEEP: Number(hypoDeepPct.toFixed(2)),
