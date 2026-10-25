@@ -1,4 +1,5 @@
 /** ヒプノグラム生成（仕様メモ §2.5のクリーンルール実装） */
+import type { Interval } from './types';
 
 /**
  * ヒプノグラム 1 点あたりのミリ秒（仕様メモ §2.5）。
@@ -256,6 +257,69 @@ export function detectREM(intervals: HypnogramEventInterval[]): RemEventInterval
       out.push({ label: 'REM', start: remStart, end: remEnd });
     } else if (remEnd - forbiddenStart >= FIVE) {
       out.push({ label: 'REM', start: forbiddenStart, end: remEnd });
+    }
+  }
+  return out;
+}
+
+/** 個別 REM 区間の削断（仕様メモ §2.5・覚醒時 REM 除去 New 版相当）。残を採用すべき断片列を返す */
+function clearRemAtAwakeNew(rem: Interval, awakes: Interval[]): Interval[] {
+  const LONG_AWAKE_MS = 360_000;
+  const cuts: Interval[] = [];
+  let cur: Interval = { start: rem.start, end: rem.end };
+  let terminatedEmpty = false;
+  let terminatedCut = false;
+  for (const aw of awakes) {
+    if (cur.end <= aw.start) break;
+    const intersectStart = Math.max(cur.start, aw.start);
+    const intersectEnd = Math.min(cur.end, aw.end);
+    if (intersectStart >= intersectEnd) continue;
+    if (aw.start <= cur.start && aw.end >= cur.end) {
+      terminatedEmpty = true;
+      break;
+    }
+    if (aw.start > cur.start) {
+      if (aw.end >= cur.end) {
+        cuts.push({ start: cur.start, end: aw.start });
+        terminatedCut = true;
+        break;
+      }
+      cuts.push({ start: cur.start, end: aw.start });
+      if (aw.end - aw.start >= LONG_AWAKE_MS) {
+        terminatedCut = true;
+        break;
+      }
+      cur = { start: aw.end, end: cur.end };
+      continue;
+    }
+    // aw.start <= cur.start（先頭からの覚醒）
+    if (aw.end - aw.start >= LONG_AWAKE_MS) {
+      terminatedEmpty = true;
+      break;
+    }
+    cur = { start: aw.end, end: cur.end };
+  }
+  if (!terminatedEmpty && !terminatedCut && cur.end > cur.start) {
+    cuts.push(cur);
+  }
+  return cuts;
+}
+
+/**
+ * 覚醒時 REM 除去（仕様メモ §2.5）。全 REM 区間を覚醒区間リストで削断し・
+ * 断片のうち長さ >= 5 分のみ REM として採用する。
+ */
+export function clearRemAtAwake(
+  remIntervals: RemEventInterval[],
+  awakes: Interval[],
+): RemEventInterval[] {
+  const FIVE = 5 * 60_000;
+  const out: RemEventInterval[] = [];
+  for (const rem of remIntervals) {
+    for (const piece of clearRemAtAwakeNew(rem, awakes)) {
+      if (piece.end - piece.start >= FIVE) {
+        out.push({ label: 'REM', start: piece.start, end: piece.end });
+      }
     }
   }
   return out;

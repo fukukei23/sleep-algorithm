@@ -6,6 +6,7 @@ import {
   classifyActivitySegments,
   postProcessDeepIntervals,
   detectREM,
+  clearRemAtAwake,
   computeHypnogram,
 } from '../src/hypnogramGeneration';
 
@@ -388,6 +389,70 @@ describe('ヒプノグラム生成パラメータ（仕様メモ §2.5）', () =
         { label: 'DEEP', start: 0, end: 900_000 },
         { label: 'LIGHT', start: 900_000, end: 2_400_000 },
       ]);
+    });
+  });
+
+  describe('clearRemAtAwake（§2.5・覚醒時REM除去・New版）', () => {
+    const rem = (startMin: number, endMin: number) => ({ label: 'REM' as const, start: startMin * MIN, end: endMin * MIN });
+    const aw = (startMin: number, endMin: number) => ({ start: startMin * MIN, end: endMin * MIN });
+
+    test('覚醒区間なし → REM全額残る', () => {
+      expect(clearRemAtAwake([rem(30, 90)], [])).toEqual([rem(30, 90)]);
+    });
+
+    test('覚醒がREM完全包含 → REM消える', () => {
+      expect(clearRemAtAwake([rem(30, 90)], [aw(25, 95)])).toEqual([]);
+    });
+
+    test('覚醒がREM後半を削る（aw.end>=rem.end）→ 前半部分が残る', () => {
+      // rem 30-90・awake 70-100: aw.start(70)>rem.start・aw.end(100)>=90 → [30,70]確定
+      expect(clearRemAtAwake([rem(30, 90)], [aw(70, 100)])).toEqual([rem(30, 70)]);
+    });
+
+    test('中途カット+長覚醒（>=6分）→ 残り破棄で前半のみ', () => {
+      // rem 30-90・awake 50-60（10分>=6分）: [30,50]カットで残余破棄
+      expect(clearRemAtAwake([rem(30, 90)], [aw(50, 60)])).toEqual([rem(30, 50)]);
+    });
+
+    test('中途カット+短覚醒（<6分）→ 残余が残る（2区間）', () => {
+      // rem 30-90・awake 50-54（4分<6分）: [30,50]カット・cur=[54,90]・走査尽き→[54,90]採用
+      expect(clearRemAtAwake([rem(30, 90)], [aw(50, 54)])).toEqual([rem(30, 50), rem(54, 90)]);
+    });
+
+    test('先頭からの長覚醒（>=6分）→ REM消える', () => {
+      // rem 30-90・awake 25-35（10分>=6分・aw.start(25)<=rem.start(30)）→ 破棄
+      expect(clearRemAtAwake([rem(30, 90)], [aw(25, 35)])).toEqual([]);
+    });
+
+    test('REM開始前に終わる覚醒（交差なし）は削断しない', () => {
+      // rem 30-90・awake 25-28: aw.end(28)<rem.start(30)で交差なし→原典ではintersection=nullで全額残る
+      expect(clearRemAtAwake([rem(30, 90)], [aw(25, 28)])).toEqual([rem(30, 90)]);
+    });
+
+    test('先頭に重なる短覚醒（<6分）→ 残余が残る', () => {
+      // rem 30-90・awake 27-30は交差なし（aw.end=30==rem.startで非交差）なので・重なるのはaw.start<30<aw.end
+      // rem 30-90・awake 29-32（3分<6分）: cur=[32,90]・走査尽き→[32,90]採用
+      expect(clearRemAtAwake([rem(30, 90)], [aw(29, 32)])).toEqual([rem(32, 90)]);
+    });
+
+    test('削断後の断片が5分未満 → 除外', () => {
+      // rem 30-40（10分）・awake 33-36（3分<6分・中途カット）: [30,33]=3分と[36,40]=4分はともに5分未満→空
+      expect(clearRemAtAwake([rem(30, 40)], [aw(33, 36)])).toEqual([]);
+    });
+
+    test('REM後の覚醒（交差なし）→ REM全額残る', () => {
+      expect(clearRemAtAwake([rem(30, 60)], [aw(70, 80)])).toEqual([rem(30, 60)]);
+    });
+
+    test('境界: 覚醒ちょうど6分（360000ms）は長覚醒扱い', () => {
+      // rem 30-90・awake 25-31（ちょうど6分・先頭から）→ 破棄
+      expect(clearRemAtAwake([rem(30, 90)], [aw(25, 31)])).toEqual([]);
+    });
+
+    test('複数REM区間を個別に処理', () => {
+      const result = clearRemAtAwake([rem(30, 90), rem(200, 260)], [aw(70, 100)]);
+      // rem1: 後半削り→[30,70]・rem2: 交差なし→全額
+      expect(result).toEqual([rem(30, 70), rem(200, 260)]);
     });
   });
 });
