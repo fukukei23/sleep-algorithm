@@ -9,6 +9,7 @@
  * 出力: validation/out/hypnogram_real.csv・real_comparison.json
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import {
   ActivityClassifier,
   SleepPhaseDetector,
@@ -183,12 +184,21 @@ console.log(`差: DEEP=${(hypoDeepPct - 18).toFixed(1)}pt・REM=${(hypoRemPct - 
 
 const hypnoCsv = ['label,start_ms,end_ms,length_ms', ...hypnoIntervals.map((i) => `${i.label},${i.start},${i.end},${i.end - i.start}`)].join('\n');
 writeFileSync('validation/out/hypnogram_real_v2.csv', hypnoCsv + '\n');
+
+// 再現性記録（MLR指摘採用・2026-10-25）: commit hash・覚醒区間有無を明記
+const gitResult = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf-8' });
+const commitHash = gitResult.stdout?.trim() ?? 'unknown';
 writeFileSync(
   'validation/out/real_comparison_v2.json',
   JSON.stringify(
     {
       purpose: 'ヒプノグラム生成（§2.5・REM区間含む）による再検証・2026-10-25追加解析後',
       method: 'history=圧縮スコア系列（§1.2-5・filteredHistory相当）・flags=isHighActivity（DHA相当）・version=10008（現行）',
+      reproducibility: {
+        commit: commitHash,
+        awakes_given: false,
+        awakes_note: 'Activity_*.txtには覚醒イベント列が無いため覚醒時REM除去は未適用（将来の§3統合で接続）',
+      },
       own_hypnogram_pct: {
         DEEP: Number(hypoDeepPct.toFixed(2)),
         LIGHT: Number(hypoLightPct.toFixed(2)),

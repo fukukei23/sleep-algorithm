@@ -336,16 +336,22 @@ export interface HypnogramInput {
   toMillis: number;
   /** 睡眠記録 version（既定 10008=現行） */
   version?: number;
-  /** デバイスタグ（WATCH/SONAR/PHASER 等・カンマ区切り） */
+  /** デバイスタグ（WATCH/SONAR/PHASER 等・カンマ区切り・要素前後の空白は非対応） */
   deviceTags?: string;
+  /**
+   * 覚醒区間リスト（時系列昇順必須）。指定時は REM 生成後に clearRemAtAwake を適用する
+   * （原典は覚醒イベント更新時に別段階で呼ぶため・未指定時は除去なしの後方互換挙動）
+   */
+  awakes?: Interval[];
 }
 
 export type HypnogramOutput = (HypnogramEventInterval | RemEventInterval)[];
 
 /**
- * ヒプノグラム生成の統合エントリ（仕様メモ §2.5・computeHypnogramFromActigraphNew 相当）。
- * 分類→短 DEEP 格下げと LIGHT マージ→REM 生成の順で・REM は後段に付与される。
+ * ヒプノグラム生成の統合エントリ（仕様メモ §2.5）。
+ * 分類→短 DEEP 格下げと LIGHT マージ→REM 生成→（awakes 指定時）覚醒時 REM 除去の順。
  * 記録全体が 20 分以下（history 長×millisPerPoint<=1,200,000）なら空配列。
+ * aggregation<1（version<10005 で可変 millisPerPoint が FRAMERATE 未満）は Error。
  */
 export function computeHypnogram(input: HypnogramInput): HypnogramOutput {
   const version = input.version ?? 10008;
@@ -358,6 +364,11 @@ export function computeHypnogram(input: HypnogramInput): HypnogramOutput {
   );
   if (input.history.length * millisPerPoint <= 1_200_000) return [];
   const aggregation = Math.trunc(millisPerPoint / FRAMERATE_MS);
+  if (aggregation < 1) {
+    throw new Error(
+      `aggregation must be >= 1 (millisPerPoint=${millisPerPoint}, version=${version})`,
+    );
+  }
   const freq = getHighActivityFrequency(input.flags, input.history.length, aggregation);
   const segments = classifyActivitySegments(
     input.history,
@@ -368,5 +379,9 @@ export function computeHypnogram(input: HypnogramInput): HypnogramOutput {
     millisPerPoint,
   );
   const processed = postProcessDeepIntervals(segments, version, deviceTags);
-  return [...processed, ...detectREM(processed)];
+  const withRem = [...processed, ...detectREM(processed)];
+  if (input.awakes === undefined) return withRem;
+  const remIntervals = withRem.filter((r): r is RemEventInterval => r.label === 'REM');
+  const others = withRem.filter((r) => r.label !== 'REM');
+  return [...others, ...clearRemAtAwake(remIntervals, input.awakes)];
 }

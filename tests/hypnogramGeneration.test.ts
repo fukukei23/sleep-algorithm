@@ -455,4 +455,82 @@ describe('ヒプノグラム生成パラメータ（仕様メモ §2.5）', () =
       expect(result).toEqual([rem(30, 70), rem(200, 260)]);
     });
   });
+
+  describe('MLR指摘採用の追加テスト（2026-10-25・統合+境界）', () => {
+    test('awakes指定時はREM生成後にclearRemAtAwakeが適用される', () => {
+      // DEEP[0,15分] LIGHT[15,40分] DEEP[40,55分] LIGHT[55,80分] → REM[65,75分]のみ生成
+      // 覚醒[70,80分]で後半削り → REM[65,70分]（5分ちょうどで残る）
+      const history: number[] = [
+        ...new Array(90).fill(1),
+        ...new Array(150).fill(3.2),
+        ...new Array(90).fill(1),
+        ...new Array(150).fill(3.2),
+      ];
+      const flags = new Array(480).fill(0);
+      const result = computeHypnogram({
+        history,
+        flags,
+        fromMillis: 0,
+        toMillis: 4_800_000,
+        awakes: [{ start: 70 * MIN, end: 80 * MIN }],
+      });
+      const remIntervals = result.filter((r) => r.label === 'REM');
+      expect(remIntervals).toEqual([{ label: 'REM', start: 65 * MIN, end: 70 * MIN }]);
+    });
+
+    test('awakes未指定時はREM除去なし（既存挙動・後方互換）', () => {
+      const history: number[] = [
+        ...new Array(90).fill(1),
+        ...new Array(150).fill(3.2),
+        ...new Array(90).fill(1),
+        ...new Array(150).fill(3.2),
+      ];
+      const flags = new Array(480).fill(0);
+      const result = computeHypnogram({ history, flags, fromMillis: 0, toMillis: 4_800_000 });
+      const remIntervals = result.filter((r) => r.label === 'REM');
+      expect(remIntervals.length).toBe(1);
+      expect(remIntervals[0]).toEqual({ label: 'REM', start: 65 * MIN, end: 75 * MIN });
+    });
+
+    test('aggregation<1（version<10005でmpp<FRAMERATE）はErrorでfail-loud', () => {
+      // history=200×mpp=9000（version<10005）→20分判定通過・aggregation=trunc(9000/10000)=0
+      // MLR実測: 修正前は RangeError(Invalid array length)が投がられていた
+      const history = new Array(200).fill(1);
+      const flags = new Array(200).fill(0);
+      expect(() =>
+        computeHypnogram({ history, flags, fromMillis: 0, toMillis: 1_800_000, version: 10004 }),
+      ).toThrow(/aggregation/);
+    });
+
+    test('version<10005の可変mppパイプライン通過（mpp>=FRAMERATE）', () => {
+      // history=300点・to=3,600,000 → mpp=12000・aggregation=1
+      // version=10004は65パーセンタイルしきい値（全1の履歴→しきい値1・1>=1でLIGHT）
+      const history = new Array(300).fill(1);
+      const flags = new Array(300).fill(0);
+      const result = computeHypnogram({
+        history,
+        flags,
+        fromMillis: 0,
+        toMillis: 3_600_000,
+        version: 10004,
+      });
+      expect(result).toEqual([{ label: 'LIGHT', start: 0, end: 3_600_000 }]);
+    });
+
+    test('flagsがtargetSize*aggregationより長い場合も出力はsize個', () => {
+      // size=3 aggregation=1 → target=3・flags長5（超過分は無視）
+      expect(getHighActivityFrequency([0, 1, 0, 1, 1], 3, 1)).toEqual([0, 1, 0]);
+    });
+
+    test('getMinDeepSleepLength: version 10009はdefault分岐（WATCH=960000）', () => {
+      expect(getMinDeepSleepLength(10009, 'WATCH')).toBe(960_000);
+      expect(getMinDeepSleepLength(10009, '')).toBe(1_190_000);
+    });
+
+    test('getDeepSleepThreshold: percentile入力に負値混在（65パーセンタイル・version 10002-10004）', () => {
+      // 10値の65パーセンタイル=rank=ceil(6.5)=7番目（昇順）
+      const hist = [-5, -2, 1, 2, 3, 4, 5, 6, 7, 8];
+      expect(getDeepSleepThreshold(10003, hist)).toBe(5);
+    });
+  });
 });
